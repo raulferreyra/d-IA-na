@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+    QCheckBox,
+    QSlider,
 )
 
 # ----------------------------
@@ -300,6 +302,25 @@ class NamedBytesIO(io.BytesIO):
 # ----------------------------
 # Workers (threads)
 # ----------------------------
+class TTSWorker(QThread):
+    error = Signal(str)
+
+    def __init__(self, text: str, volume: float, parent=None):
+        super().__init__(parent)
+        self.text = text
+        self.volume = volume
+
+    def run(self):
+        try:
+            import pyttsx3
+            engine = pyttsx3.init()
+            engine.setProperty("volume", self.volume)  # 0.0 - 1.0
+            engine.say(self.text)
+            engine.runAndWait()
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class TranscriptionWorker(QThread):
     done = Signal(str)
     error = Signal(str)
@@ -439,6 +460,19 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Estado: Listo.")
         self.status_label.setStyleSheet("color: #E9F2FF; font-size: 12px;")
 
+        self.tts_enabled = QCheckBox("🔊")
+        self.tts_enabled.setChecked(False)
+        self.tts_enabled.setToolTip("Activar/desactivar voz")
+
+        self.tts_volume = QSlider(Qt.Horizontal)
+        self.tts_volume.setRange(0, 100)
+        self.tts_volume.setValue(35)
+        self.tts_volume.setFixedWidth(120)
+        self.tts_volume.setToolTip("Volumen de voz")
+
+        row.addSpacing(18)
+        row.addWidget(self.tts_enabled)
+        row.addWidget(self.tts_volume)
         row.addWidget(self.mic_btn)
         row.addStretch(1)
         row.addWidget(self.mic_info_label)
@@ -657,6 +691,32 @@ class MainWindow(QMainWindow):
             "Tono técnico, claro y directo. No uses emojis.")
         return " ".join(instr).strip()
 
+    def maybe_speak(self, answer: str):
+        # Only read the final response, not logs or intent debug
+        if not self.tts_enabled.isChecked():
+            return
+
+        # Controlled Volume
+        vol = max(0.0, min(1.0, self.tts_volume.value() / 100.0))
+
+        # Minimal cleanup: if the markdown is very long, you can trim it.
+        text = answer.strip()
+        if not text:
+            return
+
+        # Optional: Avoid reading entire blocks of code
+        # (To avoid "dictating" 200 lines)
+        text = self.strip_code_blocks(text)
+
+        self.tts_worker = TTSWorker(text=text, volume=vol)
+        self.tts_worker.error.connect(
+            lambda msg: self.text_box.append(f"[TTS ERROR] {msg}"))
+        self.tts_worker.start()
+
+    def strip_code_blocks(self, md: str) -> str:
+        # Remove content within ``` ``` for easier reading
+        return re.sub(r"```.*?```", "[código omitido]", md, flags=re.DOTALL)
+
     def ask_chat(self, user_text: str, intent: Intent):
         if not self.openai_key:
             self.text_box.append("[Chat] Falta OPENAI_API_KEY.")
@@ -687,6 +747,7 @@ class MainWindow(QMainWindow):
     def on_chat_done(self, answer: str):
         self.ctx.add_assistant(answer)
         self.text_box.append("\n" + answer + "\n")
+        self.maybe_speak(answer)
         self.finish_interaction()
 
     def on_chat_error(self, msg: str):
