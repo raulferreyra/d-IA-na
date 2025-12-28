@@ -1,5 +1,6 @@
 import sys
-from PySide6.QtGui import QPainter, QColor
+import numpy as np
+from PySide6.QtGui import QPainter, QColor, QPen
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 
 '''import os
@@ -15,9 +16,45 @@ transcribed = openai.Audio.transcribe("whisper-1", audio_file)
 print("Resultado: ", transcribed.text)'''
 
 class NightSky(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        rng = np.random.default_rng(42)
+
+        self.star_colors = [
+            QColor(255, 255, 255),  # blanco
+            QColor(255, 244, 214),  # amarillito
+            QColor(180, 220, 255),  # azul claro
+            QColor(255, 120, 120),  # rojo suave
+        ]
+
+        self.base_w = 1000
+        self.base_h = 600
+
+        self.stars = []
+        for _ in range(220):
+            x = int(rng.integers(0, self.base_w))
+            y = int(rng.integers(0, self.base_h))
+            c = self.star_colors[int(rng.integers(0, len(self.star_colors)))]
+            size = int(rng.integers(1, 3))
+            self.stars.append((x, y, c, size))
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#061225"))
+
+        sx = self.width() / self.base_w
+        sy = self.height() / self.base_h
+
+        for x, y, color, size in self.stars:
+            painter.setPen(QPen(color))
+            rx = int(x * sx)
+            ry = int(y * sy)
+
+            painter.drawPoint(rx, ry)
+            if size > 1:
+                painter.drawPoint(rx + 1, ry)
+                painter.drawPoint(rx, ry + 1)
 
 def main():
     app = QApplication(sys.argv)
