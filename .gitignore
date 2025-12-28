@@ -75,3 +75,5 @@ Desktop.ini
 .mypy_cache/
 
 *.mp3
+
+data/*
