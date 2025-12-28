@@ -1,8 +1,16 @@
 import sys
 import numpy as np
+
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QTextEdit,
+)
 
 '''import os
 import openai
@@ -22,15 +30,15 @@ class NightSky(QWidget):
 
         rng = np.random.default_rng(42)
 
-        self.star_colors = [
-            QColor(255, 255, 255),  # blanco
-            QColor(255, 244, 214),  # amarillito
-            QColor(180, 220, 255),  # azul claro
-            QColor(255, 120, 120),  # rojo suave
-        ]
-
         self.base_w = 1000
         self.base_h = 600
+
+        self.star_colors = [
+            QColor(255, 255, 255),
+            QColor(255, 244, 214),
+            QColor(180, 220, 255),
+            QColor(255, 120, 120),
+        ]
 
         self.stars = []
         for _ in range(220):
@@ -50,6 +58,7 @@ class NightSky(QWidget):
         sx = self.width() / self.base_w
         sy = self.height() / self.base_h
 
+        # Stars
         for x, y, color, size in self.stars:
             painter.setPen(QPen(color))
             rx = int(x * sx)
@@ -59,11 +68,12 @@ class NightSky(QWidget):
                 painter.drawPoint(rx + 1, ry)
                 painter.drawPoint(rx, ry + 1)
 
+        # Moon
         cx = int(self.moon_center.x() * sx)
         cy = int(self.moon_center.y() * sy)
         r = int(self.moon_radius * min(sx, sy))
 
-        painter.setPen(QPen(Qt.NoPen))
+        painter.setPen(Qt.NoPen)
 
         painter.setBrush(QBrush(QColor(255, 248, 220)))
         painter.drawEllipse(cx - r, cy - r, 2 * r, 2 * r)
@@ -77,16 +87,79 @@ class NightSky(QWidget):
                             int(2 * r * 0.65), int(2 * r * 0.65))
 
 
+# ----------------------------
+# Ventana principal
+# ----------------------------
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("D_IA_NA")
+        self.setMinimumSize(820, 520)
+
+        self.sky = NightSky()
+        self.setCentralWidget(self.sky)
+
+        # Overlay (panel encima del cielo)
+        self.overlay = QWidget(self.sky)
+        self.overlay.setStyleSheet("""
+            QWidget {
+                background: rgba(0, 0, 0, 140);
+                border-radius: 12px;
+            }
+            QLabel {
+                color: #E9F2FF;
+                font-size: 15px;
+                font-weight: 600;
+            }
+            QTextEdit {
+                background: rgba(10, 20, 40, 180);
+                color: #E9F2FF;
+                border: 1px solid rgba(233, 242, 255, 120);
+                border-radius: 10px;
+                padding: 8px;
+                font-family: Consolas, "Cascadia Mono", monospace;
+                font-size: 12px;
+            }
+        """)
+
+        layout = QVBoxLayout(self.overlay)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        title = QLabel("Resultado")
+        layout.addWidget(title)
+
+        self.text_box = QTextEdit()
+        self.text_box.setReadOnly(True)
+        self.text_box.setText(
+            "Hola 🌙\n\n"
+            "Diana está conectada ( ͡° ͜ʖ ͡°).\n"
+            "Esta caja mostrará el texto transcrito del audio."
+        )
+        layout.addWidget(self.text_box)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+        w = self.sky.width()
+        h = self.sky.height()
+
+        ow = int(w * 0.75)
+        oh = int(h * 0.45)
+
+        ox = int((w - ow) / 2)
+        oy = int(h * 0.42)
+
+        self.overlay.setGeometry(ox, oy, ow, oh)
+
+
 def main():
     app = QApplication(sys.argv)
-
-    win = QMainWindow()
-    win.setWindowTitle("D_IA_NA")
-    win.setMinimumSize(820, 520)
-    win.setCentralWidget(NightSky())
-
+    win = MainWindow()
     win.show()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()
