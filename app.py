@@ -11,8 +11,10 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QTextEdit,
+    QPushButton,
 )
 
 # Class for drawing the night sky with stars and a moon
@@ -139,6 +141,26 @@ class MainWindow(QMainWindow):
             "Resultado: " + transcribed.text
         )
         layout.addWidget(self.text_box)
+
+        top_row = QHBoxLayout()
+
+        self.mic_btn = QPushButton("🎤 Mantener para hablar")
+        self.mic_btn.setCursor(Qt.PointingHandCursor)
+
+        self.status_label = QLabel("Estado: Listo.")
+        self.status_label.setStyleSheet("color: #E9F2FF; font-size: 12px;")
+
+        top_row.addWidget(self.mic_btn)
+        top_row.addStretch(1)
+        top_row.addWidget(self.status_label)
+
+        layout.addLayout(top_row)
+
+        # Connections (per now, just for demo)
+        self.mic_btn.pressed.connect(
+            lambda: self.status_label.setText("Estado: Grabando..."))
+        self.mic_btn.released.connect(
+            lambda: self.status_label.setText("Estado: Listo."))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
