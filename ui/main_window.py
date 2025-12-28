@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import numpy as np
 from dotenv import load_dotenv
 from PySide6.QtCore import Qt, QSize, QThread, Signal
@@ -12,6 +15,7 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+    QDialog,
 )
 
 from core.config import load_config
@@ -25,6 +29,7 @@ from ai.client import AIClient
 from tts.engine import TTSEngine
 from ui.styles import overlay_stylesheet, mic_idle_style, mic_recording_style
 from ui.widgets.night_sky import NightSky
+from ui.settings_dialog import SettingsDialog
 
 
 class Worker(QThread):
@@ -52,6 +57,10 @@ class MainWindow(QMainWindow):
         load_dotenv()
         self.cfg = load_config()
 
+        self.settings_path = Path("data") / "settings.json"
+        self.settings_path.parent.mkdir(parents=True, exist_ok=True)
+        self.settings = {}
+
         self.ctx = ConversationContext(max_turns=self.cfg.context_max_turns)
         self.capture = AudioCapture(
             self.cfg.audio_sample_rate, self.cfg.audio_channels)
@@ -67,9 +76,50 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._wire_events()
 
+        self.settings = self.load_settings()
+        self.apply_settings()
+
         if not self.cfg.openai_key:
             self.append_text("[Config] OPENAI_API_KEY missing in .env.")
 
+    # ----------------------------
+    # Settings persistence
+    # ----------------------------
+    def load_settings(self) -> dict:
+        if self.settings_path.exists():
+            try:
+                return json.loads(self.settings_path.read_text(encoding="utf-8"))
+            except Exception:
+                return {}
+        return {}
+
+    def save_settings(self) -> None:
+        self.settings_path.write_text(
+            json.dumps(self.settings, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def apply_settings(self) -> None:
+        self.tts_enabled.setChecked(
+            bool(self.settings.get("tts_enabled", False)))
+        self.tts_volume.setValue(int(self.settings.get("tts_volume", 35)))
+
+        lang = (self.settings.get("language", "es") or "es").strip().lower()
+        self.current_language = "en" if lang == "en" else "es"
+
+        self.status_label.setText("Estado: Listo.")
+
+    def open_settings(self):
+        dlg = SettingsDialog(self, current=self.settings)
+        if dlg.exec() == QDialog.Accepted:
+            self.settings.update(dlg.get_values())
+            self.save_settings()
+            self.apply_settings()
+            self.status_label.setText("Estado: Configuración aplicada.")
+
+    # ----------------------------
+    # UI
+    # ----------------------------
     def _build_ui(self):
         self.setWindowTitle("D_IA_NA")
         if self.cfg.icon_path.exists():
@@ -83,8 +133,12 @@ class MainWindow(QMainWindow):
         self.overlay.setStyleSheet(overlay_stylesheet())
 
         layout = QVBoxLayout(self.overlay)
-        layout.setContentsMargins(self.cfg.overlay_margin_lr, self.cfg.overlay_margin_tb,
-                                  self.cfg.overlay_margin_lr, self.cfg.overlay_margin_tb)
+        layout.setContentsMargins(
+            self.cfg.overlay_margin_lr,
+            self.cfg.overlay_margin_tb,
+            self.cfg.overlay_margin_lr,
+            self.cfg.overlay_margin_tb,
+        )
         layout.setSpacing(10)
 
         layout.addWidget(QLabel("Resultado"))
@@ -94,23 +148,43 @@ class MainWindow(QMainWindow):
         self.text_box.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.text_box.setLineWrapMode(QTextEdit.WidgetWidth)
         self.text_box.setReadOnly(True)
-        self.text_box.setText("Hola 🌙\n\nd_IA_na is ready.\nHold to talk.\n")
+        self.text_box.setText("Hola 🌙\n\nDiana lista.\nMantén para hablar.\n")
         layout.addWidget(self.text_box)
+
+        self.settings_btn = QPushButton("⚙️")
+        self.settings_btn.setCursor(Qt.PointingHandCursor)
+        self.settings_btn.setToolTip("Configuración")
+        self.settings_btn.setFixedSize(34, 34)
+        self.settings_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(0, 0, 0, 120);
+                color: #E9F2FF;
+                border: 1px solid rgba(233, 242, 255, 120);
+                border-radius: 10px;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background: rgba(15, 25, 45, 170);
+            }
+            QPushButton:pressed {
+                background: rgba(35, 55, 90, 200);
+            }
+        """)
 
         row = QHBoxLayout()
 
         self.tts_enabled = QCheckBox("🔊")
         self.tts_enabled.setChecked(False)
-        self.tts_enabled.setToolTip("Enable/disable voice")
+        self.tts_enabled.setToolTip("Voz on/off")
 
         self.tts_volume = QSlider(Qt.Horizontal)
         self.tts_volume.setRange(0, 100)
         self.tts_volume.setValue(35)
         self.tts_volume.setFixedWidth(120)
-        self.tts_volume.setToolTip("Voice volume")
+        self.tts_volume.setToolTip("Volumen")
 
         self.mic_btn = QPushButton("")
-        self.mic_btn.setToolTip("Hold to talk (SPACE)")
+        self.mic_btn.setToolTip("Mantener para hablar (ESPACIO)")
         self.mic_btn.setCursor(Qt.PointingHandCursor)
         self.mic_btn.setFixedSize(self.cfg.btn_size, self.cfg.btn_size)
 
@@ -135,6 +209,8 @@ class MainWindow(QMainWindow):
         row.addWidget(self.mic_info_label)
         row.addSpacing(12)
         row.addWidget(self.status_label)
+        row.addSpacing(10)
+        row.addWidget(self.settings_btn)
 
         layout.addLayout(row)
 
@@ -161,7 +237,11 @@ class MainWindow(QMainWindow):
         self.mic_btn.released.connect(self.on_mic_released)
 
         self.tts_enabled.stateChanged.connect(self.on_tts_toggle)
+        self.settings_btn.clicked.connect(self.open_settings)
 
+    # ----------------------------
+    # Interactions
+    # ----------------------------
     def on_tts_toggle(self):
         if not self.tts_enabled.isChecked():
             self.tts.stop()
@@ -183,16 +263,13 @@ class MainWindow(QMainWindow):
     def on_mic_pressed(self):
         self.mic_btn.setStyleSheet(mic_recording_style(self.cfg.btn_size))
         self.status_label.setText("Estado: Grabando...")
-        self.mic_info_label.setText("Audio: recording...")
-        self.mic_btn.setToolTip("Release to send (SPACE)")
-
+        self.mic_info_label.setText("Audio: grabando...")
         self.capture.start()
 
     def on_mic_released(self):
         audio = self.capture.stop()
         self.mic_btn.setEnabled(False)
         self.status_label.setText("Estado: Procesando...")
-        self.mic_btn.setToolTip("Hold to talk (SPACE)")
 
         if audio.size == 0:
             self.mic_info_label.setText("Audio: —")
@@ -208,7 +285,8 @@ class MainWindow(QMainWindow):
         file_obj = NamedBytesIO(wav_bytes, "mic.wav")
 
         self.status_label.setText("Estado: Transcribiendo...")
-        self._active_tx_worker = Worker(self.ai.transcribe_wav, file_obj, "es")
+        lang = getattr(self, "current_language", "es")
+        self._active_tx_worker = Worker(self.ai.transcribe_wav, file_obj, lang)
         self._active_tx_worker.done.connect(self.on_transcription_done)
         self._active_tx_worker.error.connect(self.on_transcription_error)
         self._active_tx_worker.start()
@@ -218,15 +296,16 @@ class MainWindow(QMainWindow):
 
         if self.cfg.debug_intent_to_textbox:
             self.append_text("—" * 36)
-            self.append_text(f"Transcribed: {intent.raw}")
+            self.append_text(f"Transcrito: {intent.raw}")
             self.append_text(
-                f"Intent(kind={intent.kind}, command={intent.command}, format={intent.format}, style={intent.style})")
+                f"Intent(kind={intent.kind}, command={intent.command}, format={intent.format}, style={intent.style})"
+            )
             self.append_text(f"Payload: {intent.payload}")
 
         self._route_intent(intent)
 
     def on_transcription_error(self, msg: str):
-        self.append_text(f"[Transcription ERROR] {msg}")
+        self.append_text(f"[ERROR Transcripción] {msg}")
         self._finish_interaction()
 
     def _pick_template(self, intent: Intent) -> str:
@@ -239,8 +318,8 @@ class MainWindow(QMainWindow):
 
     def _route_intent(self, intent: Intent):
         if intent.kind == "dictation":
-            self.ctx.add_user(f"[Dictation] {intent.raw}")
-            self.append_text(f"[Dictation] {intent.raw}")
+            self.ctx.add_user(f"[Dictado] {intent.raw}")
+            self.append_text(f"[Dictado] {intent.raw}")
             self._finish_interaction()
             return
 
@@ -268,7 +347,7 @@ class MainWindow(QMainWindow):
         self._finish_interaction()
 
     def on_chat_error(self, msg: str):
-        self.append_text(f"[Chat ERROR] {msg}")
+        self.append_text(f"[ERROR Chat] {msg}")
         self._finish_interaction()
 
     def _speak_answer(self, answer: str):
@@ -280,10 +359,9 @@ class MainWindow(QMainWindow):
             return
 
         volume = max(0.0, min(1.0, self.tts_volume.value() / 100.0))
-
         self._active_tts_worker = Worker(self.tts.speak, text, volume)
         self._active_tts_worker.error.connect(
-            lambda msg: self.append_text(f"[TTS ERROR] {msg}"))
+            lambda msg: self.append_text(f"[ERROR TTS] {msg}"))
         self._active_tts_worker.start()
 
     def append_text(self, s: str):
