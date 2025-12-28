@@ -5,8 +5,10 @@ import wave
 import numpy as np
 import sounddevice as sd
 import re
+
+from collections import deque
 from dataclasses import dataclass
-from typing import Optional
+from typing import Deque, List, Dict, Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -118,6 +120,80 @@ def parse_intent(transcript: str) -> Intent:
         payload=payload,
         raw=raw,
     )
+
+
+@dataclass
+class Turn:
+    role: str   # "user" | "assistant"
+    content: str
+
+
+class ConversationContext:
+    def __init__(self, max_turns: int = 8):
+        self.max_turns = max_turns
+        self.turns: Deque[Turn] = deque(maxlen=max_turns)
+
+    def add_user(self, text: str):
+        self.turns.append(Turn(role="user", content=text))
+
+    def add_assistant(self, text: str):
+        self.turns.append(Turn(role="assistant", content=text))
+
+    def as_messages(self) -> List[Dict[str, str]]:
+        return [{"role": t.role, "content": t.content} for t in self.turns]
+
+    def last_user_text(self) -> Optional[str]:
+        for t in reversed(self.turns):
+            if t.role == "user":
+                return t.content
+        return None
+
+    def last_assistant_text(self) -> Optional[str]:
+        for t in reversed(self.turns):
+            if t.role == "assistant":
+                return t.content
+        return None
+
+
+class ChatWorker(QThread):
+    done = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, api_key: str, messages: List[Dict[str, str]], model: str = "gpt-4o-mini", parent=None):
+        super().__init__(parent)
+        self.api_key = api_key
+        self.messages = messages
+        self.model = model
+
+    def run(self):
+        try:
+            # SDK nuevo (OpenAI >= 1.x)
+            try:
+                from openai import OpenAI  # type: ignore
+                client = OpenAI(api_key=self.api_key)
+                resp = client.chat.completions.create(
+                    model=self.model,
+                    messages=self.messages,
+                )
+                text = resp.choices[0].message.content or ""
+                self.done.emit(text.strip())
+                return
+            except Exception:
+                pass
+
+            # Fallback SDK viejo (openai 0.x)
+            import openai  # type: ignore
+            openai.api_key = self.api_key
+            resp = openai.ChatCompletion.create(
+                model=self.model,
+                messages=self.messages,
+            )
+            text = resp["choices"][0]["message"]["content"] or ""
+            self.done.emit(text.strip())
+
+        except Exception as e:
+            self.error.emit(str(e))
+
 
 # ----------------------------
 # Canvas: night sky with stars + moon
@@ -248,6 +324,7 @@ class TranscriptionWorker(QThread):
             result = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=file_obj,
+                language="es",
             )
 
             text = getattr(result, "text", "").strip()
@@ -269,6 +346,11 @@ class MainWindow(QMainWindow):
         # Load env and OpenAI key
         load_dotenv()
         self.openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+
+        self.chat_model = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini").strip()
+        self.ctx = ConversationContext(max_turns=8)
+        self.last_intent = None
+        self.chat_worker = None
 
         # Audio capture state (RAM)
         self.is_recording = False
@@ -310,7 +392,7 @@ class MainWindow(QMainWindow):
         """)
 
         layout = QVBoxLayout(self.overlay)
-        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setContentsMargins(22, 16, 22, 16)
         layout.setSpacing(10)
 
         title = QLabel("Resultado")
@@ -370,13 +452,135 @@ class MainWindow(QMainWindow):
             self.text_box.append(
                 "[Config] OPENAI_API_KEY no encontrada em .env. La transcripción fallará hasta que la establezcas.")
 
+    def route_intent(self, intent):
+        self.last_intent = intent
+
+        payload_lower = intent.payload.lower().strip()
+
+        if payload_lower in ("continúa", "continua", "sigue", "continue"):
+            last = self.ctx.last_assistant_text() or ""
+            user_text = f"Continúa desde aquí:\n\n{last}"
+            self._ask_chat(user_text, intent)
+            return
+
+        if payload_lower in ("resume lo anterior", "resumen de lo anterior", "resume lo último", "resume lo ultimo"):
+            last = self.ctx.last_assistant_text() or ""
+            user_text = f"Resume lo anterior en pocas líneas:\n\n{last}"
+            self._ask_chat(user_text, intent)
+            return
+
+        if intent.kind == "dictation":
+            self.ctx.add_user(f"[Dictado] {intent.raw}")
+            self.text_box.append(f"[Dictado] {intent.raw}")
+            return
+
+        if intent.kind == "question":
+            self._ask_chat(intent.raw, intent)
+            return
+
+        if intent.kind == "command":
+            cmd = intent.command or "general_command"
+
+            if cmd == "summarize":
+                self._ask_chat(
+                    f"Resume lo siguiente:\n\n{intent.payload}", intent)
+                return
+
+            if cmd == "next_steps":
+                self._ask_chat(
+                    f"Dame los siguientes pasos para:\n\n{intent.payload}", intent)
+                return
+
+            if cmd == "explain":
+                self._ask_chat(
+                    f"Explica lo siguiente:\n\n{intent.payload}", intent)
+                return
+
+            if cmd == "translate":
+                self._ask_chat(
+                    f"Traduce lo siguiente:\n\n{intent.payload}", intent)
+                return
+
+            if cmd in ("debug", "refactor"):
+                self._ask_chat(f"{intent.payload}", intent)
+                return
+
+            self._ask_chat(intent.payload, intent)
+            return
+
+    def _build_style_instructions(self, intent) -> str:
+        """
+        Convierte format/style detectados (Paso 9) en instrucciones.
+        """
+        instr = []
+        if intent.format == "markdown":
+            instr.append("Responde en Markdown.")
+
+        if intent.style:
+            s = intent.style.lower()
+            if "bullets" in s:
+                instr.append("Usa viñetas.")
+            if "numbered" in s:
+                instr.append("Usa pasos numerados.")
+            if "short" in s:
+                instr.append("Sé breve.")
+            if "detailed" in s:
+                instr.append("Sé detallado.")
+
+        instr.append(
+            "Mantén un tono amoroso, claro y directo. No uses emojis.")
+
+        return " ".join(instr).strip()
+
+    def _ask_chat(self, user_text: str, intent):
+        if not self.openai_key:
+            self.text_box.append("[Chat] Falta OPENAI_API_KEY.")
+            return
+
+        style_instr = self._build_style_instructions(intent)
+
+        system_prompt = (
+            "Eres Diana, una asistente para programación y tareas técnicas. "
+            "Responde con precisión. "
+            + (style_instr if style_instr else "")
+        ).strip()
+
+        self.ctx.add_user(user_text)
+
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(self.ctx.as_messages())
+
+        # UI status
+        self.status_label.setText("Estado: Pensando...")
+        self.mic_btn.setEnabled(False)
+
+        self.chat_worker = ChatWorker(
+            api_key=self.openai_key,
+            messages=messages,
+            model=self.chat_model,
+        )
+        self.chat_worker.done.connect(self.on_chat_done)
+        self.chat_worker.error.connect(self.on_chat_error)
+        self.chat_worker.start()
+
+    def on_chat_done(self, answer: str):
+        self.ctx.add_assistant(answer)
+        self.text_box.append("\n" + answer + "\n")
+        self.status_label.setText("Estado: Listo.")
+        self.mic_btn.setEnabled(True)
+
+    def on_chat_error(self, msg: str):
+        self.text_box.append(f"[Chat ERROR] {msg}")
+        self.status_label.setText("Estado: Listo.")
+        self.mic_btn.setEnabled(True)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
 
         w = self.sky.width()
         h = self.sky.height()
 
-        ow = int(w * 0.75)
+        ow = int(w * 0.72)
         oh = int(h * 0.45)
 
         ox = int((w - ow) / 2)
@@ -469,6 +673,7 @@ class MainWindow(QMainWindow):
     # ----------------------------
     def on_transcription_done(self, text: str):
         intent = parse_intent(text)
+        self.route_intent(intent)
 
         self.text_box.append("—" * 36)
         self.text_box.append(f"Transcrito: {intent.raw}")
