@@ -4,6 +4,9 @@ import io
 import wave
 import numpy as np
 import sounddevice as sd
+import re
+from dataclasses import dataclass
+from typing import Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -21,9 +24,106 @@ from PySide6.QtWidgets import (
 )
 
 
+@dataclass
+class Intent:
+    kind: str                 # "command" | "question" | "dictation"
+    # e.g. "summarize", "next_steps", "explain", "translate"
+    command: Optional[str]
+    format: Optional[str]     # e.g. "markdown", "plain"
+    style: Optional[str]      # e.g. "bullets", "numbered", "short", "detailed"
+    payload: str              # remaining text to process
+    raw: str                  # original transcript
+
+
+def parse_intent(transcript: str) -> Intent:
+    """
+    Classifies transcript into command/question/dictation and extracts simple preferences.
+    """
+    raw = (transcript or "").strip()
+    t = raw
+
+    # --- Normalize spaces
+    t = re.sub(r"\s+", " ", t).strip()
+
+    # --- Detect activation prefix (Diana, Diana:, D_IA_NA, etc.)
+    activation = False
+    activation_pattern = r"^(diana|d_ia_na|diana\.|diana:|diana,)\s*"
+    if re.match(activation_pattern, t, flags=re.IGNORECASE):
+        activation = True
+        t = re.sub(activation_pattern, "", t, flags=re.IGNORECASE).strip()
+
+    # --- Detect format preferences
+    fmt = None
+    if re.search(r"\b(markdown|md|\.md)\b", t, flags=re.IGNORECASE):
+        fmt = "markdown"
+
+    # --- Detect style preferences
+    style = None
+    if re.search(r"\b(viñetas|bullets|bullet points)\b", t, flags=re.IGNORECASE):
+        style = "bullets"
+    elif re.search(r"\b(pasos|step by step|paso a paso)\b", t, flags=re.IGNORECASE):
+        style = "numbered"
+
+    if re.search(r"\b(corto|breve|short)\b", t, flags=re.IGNORECASE):
+        style = (style + "+short") if style else "short"
+    if re.search(r"\b(detallado|largo|detailed)\b", t, flags=re.IGNORECASE):
+        style = (style + "+detailed") if style else "detailed"
+
+    # --- Command keyword detection (Spanish-first, simple)
+    # You can extend this list safely later.
+    cmd = None
+    command_map = [
+        (r"\bresume\b|\bresumen\b|\bresum(e|e)\b", "summarize"),
+        (r"\bexplica\b|\bexplain\b", "explain"),
+        (r"\bpasos\b|\bsiguientes pasos\b|\bnext steps\b", "next_steps"),
+        (r"\btraduce\b|\btranslate\b", "translate"),
+        (r"\bmejora\b|\brefactoriza\b|\brefactor\b", "refactor"),
+        (r"\bdebug\b|\barregla\b|\bfix\b", "debug"),
+    ]
+
+    for pattern, name in command_map:
+        if re.search(pattern, t, flags=re.IGNORECASE):
+            cmd = name
+            break
+
+    # --- Question detection
+    # If there is a question mark or typical question words, treat as question unless activation+command.
+    looks_like_question = (
+        "?" in t
+        or re.match(r"^(qué|que|cómo|como|por qué|porque|cuál|cual|dónde|donde|para qué|cuando)\b", t, flags=re.IGNORECASE)
+    )
+
+    # --- Decide kind
+    if activation and cmd:
+        kind = "command"
+    elif looks_like_question and not cmd:
+        kind = "question"
+    elif activation and not cmd:
+        # If user calls Diana but no recognized command, treat as question by default
+        kind = "question" if looks_like_question else "command"
+        # but keep cmd = None (router decides later)
+    elif cmd and not looks_like_question:
+        # Command without saying "Diana"
+        kind = "command"
+    else:
+        kind = "dictation"
+
+    payload = t.strip()
+
+    return Intent(
+        kind=kind,
+        command=cmd,
+        format=fmt,
+        style=style,
+        payload=payload,
+        raw=raw,
+    )
+
 # ----------------------------
 # Canvas: night sky with stars + moon
 # ----------------------------
+
+
 class NightSky(QWidget):
     def __init__(self):
         super().__init__()
@@ -368,7 +468,16 @@ class MainWindow(QMainWindow):
     # Transcription callbacks
     # ----------------------------
     def on_transcription_done(self, text: str):
-        self.text_box.append(f"Resultado: {text}")
+        intent = parse_intent(text)
+
+        self.text_box.append("—" * 36)
+        self.text_box.append(f"Transcrito: {intent.raw}")
+
+        self.text_box.append(
+            f"Intent(kind={intent.kind}, command={intent.command}, format={intent.format}, style={intent.style})"
+        )
+        self.text_box.append(f"Payload: {intent.payload}")
+
         self.status_label.setText("Estado: Listo.")
         self.set_mic_idle_style()
         self.mic_btn.setEnabled(True)
