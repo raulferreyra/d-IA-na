@@ -5,7 +5,7 @@ import numpy as np
 
 from dotenv import load_dotenv
 from PySide6.QtCore import Qt, QPoint
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
 )
 
 # Class for drawing the night sky with stars and a moon
+
+
 class NightSky(QWidget):
     def __init__(self):
         super().__init__()
@@ -87,6 +89,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("D_IA_NA")
+        self.setWindowIcon(QIcon("assets/icons/moon.ico"))
         self.setMinimumSize(820, 520)
 
         self.sky = NightSky()
