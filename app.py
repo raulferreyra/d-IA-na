@@ -5,8 +5,18 @@ import numpy as np
 import sounddevice as sd
 
 from dotenv import load_dotenv
-from PySide6.QtCore import Qt, QPoint
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QIcon
+from PySide6.QtCore import (
+    Qt,
+    QPoint,
+    QSize,
+)
+from PySide6.QtGui import (
+    QPainter,
+    QColor,
+    QPen,
+    QBrush,
+    QIcon,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -145,15 +155,41 @@ class MainWindow(QMainWindow):
         self.text_box.setReadOnly(True)
         self.text_box.setText(
             "Hola 🌙\n\n"
-            "Diana está conectada ( ͡° ͜ʖ ͡°).\n"
+            "Diana está enchufada ( ͡° ͜ʖ ͡°).\n"
             "Resultado: " + transcribed.text
         )
         layout.addWidget(self.text_box)
 
         top_row = QHBoxLayout()
 
-        self.mic_btn = QPushButton("🎤 Mantener para hablar")
+        self.mic_btn = QPushButton("")
+        self.mic_btn.setToolTip("Mantener para hablar")
         self.mic_btn.setCursor(Qt.PointingHandCursor)
+
+        # Fixed size for the button
+        BTN_SIZE = 46
+        self.mic_btn.setFixedSize(BTN_SIZE, BTN_SIZE)
+
+        # Centered button
+        mic_icon = QIcon("assets/images/microphone.png")
+        self.mic_btn.setIcon(mic_icon)
+        self.mic_btn.setIconSize(QSize(22, 22))
+
+        # Based styles
+        self.mic_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(190, 70, 70, 210);   /* rojo suave */
+                border: 1px solid rgba(255, 255, 255, 120);
+                border-radius: 23px; /* la mitad de 46 */
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: rgba(210, 85, 85, 220);
+            }
+            QPushButton:pressed {
+                background-color: rgba(80, 170, 110, 230);  /* verde suave mientras presionas */
+            }
+        """)
 
         self.status_label = QLabel("Estado: Listo.")
         self.status_label.setStyleSheet("color: #E9F2FF; font-size: 12px;")
