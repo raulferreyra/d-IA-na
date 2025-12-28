@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QSlider,
     QPushButton,
+    QLabel,
 )
 
 
@@ -45,9 +46,12 @@ class SettingsDialog(QDialog):
         self.language.addItems(["es", "en"])
         self.language.setCurrentText((current or {}).get("language", "es"))
 
-        self.persona = QLineEdit(
-            (current or {}).get("persona", "técnico,directo"))
-        self.persona.setPlaceholderText("Ej: técnico,directo,bromista")
+        # Persona: base fixed + extra tags only
+        self.persona_base = QLabel("técnico, directo")
+        self.persona_extra = QLineEdit(
+            (current or {}).get("persona_extra", ""))
+        self.persona_extra.setPlaceholderText(
+            "Ej: bromista, serio, sarcástico")
 
         form.addRow("Proveedor IA", self.provider)
         form.addRow("Modelo IA", self.model)
@@ -56,7 +60,8 @@ class SettingsDialog(QDialog):
         form.addRow("Voz", self.tts_enabled)
         form.addRow("Volumen", self.tts_volume)
         form.addRow("Idioma", self.language)
-        form.addRow("Estilo (tags)", self.persona)
+        form.addRow("Base (fijo)", self.persona_base)
+        form.addRow("Estilo extra (tags)", self.persona_extra)
 
         btns = QHBoxLayout()
         btns.addStretch(1)
@@ -83,5 +88,5 @@ class SettingsDialog(QDialog):
             "tts_enabled": self.tts_enabled.isChecked(),
             "tts_volume": int(self.tts_volume.value()),
             "language": self.language.currentText().strip(),
-            "persona": self.persona.text().strip(),
+            "persona_extra": self.persona_extra.text().strip(),
         }

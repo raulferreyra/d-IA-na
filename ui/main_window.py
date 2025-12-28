@@ -107,7 +107,46 @@ class MainWindow(QMainWindow):
         lang = (self.settings.get("language", "es") or "es").strip().lower()
         self.current_language = "en" if lang == "en" else "es"
 
-        self.status_label.setText("Estado: Listo.")
+        # Reflect language in UI strings/tooltips (minimal visible feedback)
+        if self.current_language == "en":
+            self.mic_btn.setToolTip("Hold to talk (SPACE)")
+            self.status_label.setText("Status: Ready.")
+        else:
+            self.mic_btn.setToolTip("Mantener para hablar (ESPACIO)")
+            self.status_label.setText("Estado: Listo.")
+
+        # Apply API key/provider overrides
+        self._apply_ai_settings()
+
+        # Force persona base tags
+        self._apply_persona_settings()
+
+    def _apply_ai_settings(self) -> None:
+        provider = (self.settings.get("provider", "openai")
+                    or "openai").strip().lower()
+        model = (self.settings.get("model", self.cfg.chat_model)
+                 or self.cfg.chat_model).strip()
+        api_key = (self.settings.get("api_key", "") or "").strip()
+
+        # Current implementation supports OpenAI only (others are placeholders for UI)
+        if provider != "openai":
+            provider = "openai"
+
+        # Override .env key if user provided one in settings
+        final_key = api_key if api_key else (self.cfg.openai_key or "")
+
+        # Recreate client with new settings
+        self.ai = AIClient(api_key=final_key, chat_model=model)
+
+    def _apply_persona_settings(self) -> None:
+        extras = (self.settings.get("persona_extra", "") or "").strip()
+        extras_list = [x.strip() for x in extras.split(",") if x.strip()]
+        base = ["técnico", "directo"]
+
+        # Store a canonical combined string (base always enforced)
+        combined = base + \
+            [x for x in extras_list if x.lower() not in ("técnico", "directo")]
+        self.persona_tags = combined
 
     def open_settings(self):
         dlg = SettingsDialog(self, current=self.settings)
