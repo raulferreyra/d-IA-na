@@ -224,7 +224,7 @@ class MainWindow(QMainWindow):
         self.text_box.setReadOnly(True)
         self.text_box.setText(
             "Hola 🌙\n\n"
-            "Diana está conectada.\n"
+            "d_IA_na está conectada.\n"
             "Presiona para hablar.\n"
         )
         layout.addWidget(self.text_box)
