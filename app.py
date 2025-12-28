@@ -51,6 +51,40 @@ CONTEXT_MAX_TURNS = 8
 DEBUG_INTENT_TO_TEXTBOX = True
 
 
+DEV_TEMPLATES = {
+    "general": (
+        "Eres Diana, una asistente de ingeniería de software. "
+        "Da respuestas técnicas, correctas y accionables."
+    ),
+    "explain": (
+        "Explica como senior developer. "
+        "Si hay código, describe qué hace, riesgos, y un ejemplo mínimo si aporta. "
+        "Si el usuario pide Markdown, usa encabezados claros."
+    ),
+    "developer": (
+        "Muestra código como senior developer. "
+        "aporta código correcto, seguro y eficiente. "
+        "Si el usuario pide un lenguaje, úsalo. "
+    ),
+    "refactor": (
+        "Actúa como revisor de código. "
+        "Propón refactor con enfoque en legibilidad, separación de responsabilidades, y testabilidad. "
+        "Entrega un plan y luego el código propuesto. "
+        "No inventes dependencias inexistentes."
+    ),
+    "tests": (
+        "Actúa como QA/Dev. "
+        "Genera tests (unitarios primero) con casos borde. "
+        "Si falta contexto, asume lo mínimo y dilo explícitamente."
+    ),
+    "debug": (
+        "Actúa como debugger. "
+        "Primero hipótesis, luego verificación, luego fix. "
+        "Pide logs/trace solo si es estrictamente necesario."
+    ),
+}
+
+
 # ----------------------------
 # Intent parsing
 # ----------------------------
@@ -596,21 +630,31 @@ class MainWindow(QMainWindow):
 
     def build_style_instructions(self, intent: Intent) -> str:
         instr = []
-        if intent.format == "markdown":
-            instr.append("Responde en Markdown.")
 
+        # Output format
+        if intent.format == "markdown":
+            instr.append(
+                "Responde en Markdown. "
+                "Usa encabezados (##) si corresponde. "
+                "No uses listas anidadas raras: si hay pasos numerados, mantén subpuntos con '-' bien indentados. "
+                "No mezcles 1) con bullets sin necesidad."
+            )
+
+        # Style hints
         if intent.style:
             s = intent.style.lower()
             if "bullets" in s:
-                instr.append("Usa viñetas.")
+                instr.append("Usa viñetas '-' como lista principal.")
             if "numbered" in s:
-                instr.append("Usa pasos numerados.")
+                instr.append(
+                    "Usa lista numerada '1.' '2.' como lista principal.")
             if "short" in s:
                 instr.append("Sé breve.")
             if "detailed" in s:
                 instr.append("Sé detallado.")
 
-        instr.append("Tono técnico, claro y directo. No uses emojis.")
+        instr.append(
+            "Tono técnico, claro y directo. No uses emojis.")
         return " ".join(instr).strip()
 
     def ask_chat(self, user_text: str, intent: Intent):
@@ -619,12 +663,9 @@ class MainWindow(QMainWindow):
             self.finish_interaction()
             return
 
+        dev_template = self.pick_dev_template(intent)
         style_instr = self.build_style_instructions(intent)
-        system_prompt = (
-            "Eres Diana, una asistente para programación y tareas técnicas. "
-            "Responde con precisión. "
-            + style_instr
-        ).strip()
+        system_prompt = (dev_template + " " + style_instr).strip()
 
         self.ctx.add_user(user_text)
 
@@ -652,9 +693,26 @@ class MainWindow(QMainWindow):
         self.text_box.append(f"[Chat ERROR] {msg}")
         self.finish_interaction()
 
+    def pick_dev_template(self, intent: Intent) -> str:
+        # Default
+        if intent.kind == "question":
+            return DEV_TEMPLATES["general"]
+
+        if intent.kind == "command":
+            cmd = intent.command or "general"
+            if cmd in DEV_TEMPLATES:
+                return DEV_TEMPLATES[cmd]
+            # alias: correct -> explain (o general)
+            if cmd == "correct":
+                return DEV_TEMPLATES["general"]
+            return DEV_TEMPLATES["general"]
+
+        return DEV_TEMPLATES["general"]
+
     # ----------------------------
     # UI helpers
     # ----------------------------
+
     def finish_interaction(self):
         self.status_label.setText("Estado: Listo.")
         self.set_mic_idle_style()
