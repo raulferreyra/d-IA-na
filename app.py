@@ -152,6 +152,10 @@ class MainWindow(QMainWindow):
         transcribed = openai.Audio.transcribe("whisper-1", audio_file)
 
         self.text_box = QTextEdit()
+        self.text_box.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.text_box.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.text_box.setLineWrapMode(QTextEdit.WidgetWidth)
+
         self.text_box.setReadOnly(True)
         self.text_box.setText(
             "Hola 🌙\n\n"
@@ -203,6 +207,7 @@ class MainWindow(QMainWindow):
         # Connections (per now, just for demo)
         self.mic_btn.pressed.connect(self.start_recording)
         self.mic_btn.released.connect(self.stop_recording)
+        self.set_mic_idle_style()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -219,6 +224,8 @@ class MainWindow(QMainWindow):
         self.overlay.setGeometry(ox, oy, ow, oh)
 
     def start_recording(self):
+        self.set_mic_recording_style()
+
         if self.is_recording:
             return
 
@@ -264,6 +271,34 @@ class MainWindow(QMainWindow):
         self.text_box.append(
             f"[Mic] Audio capturado: {duration:.2f}s | pico={peak:.3f}")
         self.status_label.setText("Estado: Listo.")
+        self.set_mic_idle_style()
+
+    def set_mic_idle_style(self):
+        self.mic_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(190, 70, 70, 210);
+                border: 1px solid rgba(255, 255, 255, 120);
+                border-radius: 23px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: rgba(210, 85, 85, 220);
+            }
+        """)
+
+    def set_mic_recording_style(self):
+        self.mic_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(80, 170, 110, 230);
+                border: 1px solid rgba(255, 255, 255, 120);
+                border-radius: 23px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: rgba(95, 190, 125, 240);
+            }
+        """)
+
 
 
 def main():
