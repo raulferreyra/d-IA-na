@@ -12,7 +12,17 @@ import numpy as np
 import sounddevice as sd
 from dotenv import load_dotenv
 from openai import OpenAI
-from PySide6.QtCore import QPoint, QSize, Qt, QThread, Signal
+from PySide6.QtCore import (
+    QPoint,
+    QSize,
+    Qt,
+    QThread,
+    Signal,
+    QPropertyAnimation,
+    QEasingCurve,
+    QRect,
+    QTimer,
+)
 from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
@@ -387,6 +397,11 @@ class MainWindow(QMainWindow):
         self.is_recording = False
         self.audio_frames: List[np.ndarray] = []
         self.stream = None
+        self.mic_pulse_anim = None
+
+        self.thinking_timer = QTimer()
+        self.thinking_dots = 0
+        self.thinking_timer.timeout.connect(self.update_thinking_status)
 
         self.tx_worker: Optional[TranscriptionWorker] = None
         self.chat_worker: Optional[ChatWorker] = None
@@ -489,6 +504,64 @@ class MainWindow(QMainWindow):
         if not self.openai_key:
             self.text_box.append(
                 "[Config] OPENAI_API_KEY no encontrada en .env.")
+
+    def start_thinking(self):
+        self.thinking_dots = 0
+        self.status_label.setText("Estado: Pensando")
+        self.thinking_timer.start(450)
+
+    def stop_thinking(self):
+        self.thinking_timer.stop()
+        self.status_label.setText("Estado: Listo.")
+
+    def update_thinking_status(self):
+        self.thinking_dots = (self.thinking_dots + 1) % 4
+        dots = "." * self.thinking_dots
+        self.status_label.setText(f"Estado: Pensando{dots}")
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+            if not self.is_recording:
+                self.start_recording()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+            if self.is_recording:
+                self.stop_recording()
+            event.accept()
+        else:
+            super().keyReleaseEvent(event)
+
+    def start_mic_pulse(self):
+        if self.mic_pulse_anim:
+            return
+
+        rect = self.mic_btn.geometry()
+        grow = QRect(
+            rect.x() - 3,
+            rect.y() - 3,
+            rect.width() + 6,
+            rect.height() + 6,
+        )
+
+        anim = QPropertyAnimation(self.mic_btn, b"geometry")
+        anim.setDuration(900)
+        anim.setLoopCount(-1)
+        anim.setStartValue(rect)
+        anim.setKeyValueAt(0.5, grow)
+        anim.setEndValue(rect)
+        anim.setEasingCurve(QEasingCurve.InOutSine)
+
+        self.mic_pulse_anim = anim
+        anim.start()
+
+    def stop_mic_pulse(self):
+        if self.mic_pulse_anim:
+            self.mic_pulse_anim.stop()
+            self.mic_pulse_anim = None
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
