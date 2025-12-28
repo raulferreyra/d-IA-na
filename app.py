@@ -197,9 +197,13 @@ class MainWindow(QMainWindow):
 
         self.status_label = QLabel("Estado: Listo.")
         self.status_label.setStyleSheet("color: #E9F2FF; font-size: 12px;")
+        self.mic_info_label = QLabel("")
+        self.mic_info_label.setStyleSheet("color: rgba(233, 242, 255, 180); font-size: 12px;")
 
         top_row.addWidget(self.mic_btn)
         top_row.addStretch(1)
+        top_row.addWidget(self.mic_info_label)
+        top_row.addSpacing(12)
         top_row.addWidget(self.status_label)
 
         layout.addLayout(top_row)
@@ -246,6 +250,9 @@ class MainWindow(QMainWindow):
         self.stream.start()
 
     def stop_recording(self):
+        self.mic_btn.setEnabled(False)
+        self.status_label.setText("Estado: Procesando...")
+
         if not self.is_recording:
             return
 
@@ -260,7 +267,7 @@ class MainWindow(QMainWindow):
 
         # Process the captured audio (no yet implemented)
         if not self.audio_frames:
-            self.text_box.append("[Mic] No se capturó audio.")
+            self.mic_info_label.setText("Audio: —")
             self.status_label.setText("Estado: Listo.")
             return
 
@@ -268,10 +275,13 @@ class MainWindow(QMainWindow):
         duration = len(audio) / float(self.samplerate)
         peak = float(np.max(np.abs(audio)))
 
-        self.text_box.append(
-            f"[Mic] Audio capturado: {duration:.2f}s | pico={peak:.3f}")
+        self.mic_info_label.setText(f"Audio: {duration:.2f}s | pico={peak:.3f}")
         self.status_label.setText("Estado: Listo.")
         self.set_mic_idle_style()
+
+        self.mic_btn.setEnabled(True)
+        self.status_label.setText("Estado: Listo.")
+
 
     def set_mic_idle_style(self):
         self.mic_btn.setStyleSheet("""
