@@ -2,6 +2,7 @@ import sys
 import os
 import openai
 import numpy as np
+import sounddevice as sd
 
 from dotenv import load_dotenv
 from PySide6.QtCore import Qt, QPoint
@@ -90,6 +91,13 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        # --- buffers for RAM ---
+        self.is_recording = False
+        self.audio_frames = []
+        self.samplerate = 16000
+        self.channels = 1
+        self.stream = None
+
         self.setWindowTitle("D_IA_NA")
         self.setWindowIcon(QIcon("assets/icons/moon.ico"))
         self.setMinimumSize(820, 520)
@@ -157,10 +165,8 @@ class MainWindow(QMainWindow):
         layout.addLayout(top_row)
 
         # Connections (per now, just for demo)
-        self.mic_btn.pressed.connect(
-            lambda: self.status_label.setText("Estado: Grabando..."))
-        self.mic_btn.released.connect(
-            lambda: self.status_label.setText("Estado: Listo."))
+        self.mic_btn.pressed.connect(self.start_recording)
+        self.mic_btn.released.connect(self.stop_recording)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -175,6 +181,53 @@ class MainWindow(QMainWindow):
         oy = int(h * 0.42)
 
         self.overlay.setGeometry(ox, oy, ow, oh)
+
+    def start_recording(self):
+        if self.is_recording:
+            return
+
+        self.is_recording = True
+        self.audio_frames = []
+        self.status_label.setText("Estado: Grabando...")
+
+        def callback(indata, frames, time_info, status):
+            if self.is_recording:
+                self.audio_frames.append(indata.copy())
+
+        self.stream = sd.InputStream(
+            samplerate=self.samplerate,
+            channels=self.channels,
+            dtype="float32",
+            callback=callback
+        )
+        self.stream.start()
+
+    def stop_recording(self):
+        if not self.is_recording:
+            return
+
+        self.is_recording = False
+
+        try:
+            if self.stream is not None:
+                self.stream.stop()
+                self.stream.close()
+        finally:
+            self.stream = None
+
+        # Process the captured audio (no yet implemented)
+        if not self.audio_frames:
+            self.text_box.append("[Mic] No se capturó audio.")
+            self.status_label.setText("Estado: Listo.")
+            return
+
+        audio = np.concatenate(self.audio_frames, axis=0)
+        duration = len(audio) / float(self.samplerate)
+        peak = float(np.max(np.abs(audio)))
+
+        self.text_box.append(
+            f"[Mic] Audio capturado: {duration:.2f}s | pico={peak:.3f}")
+        self.status_label.setText("Estado: Listo.")
 
 
 def main():
