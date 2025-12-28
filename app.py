@@ -1,6 +1,9 @@
 import sys
+import os
+import openai
 import numpy as np
 
+from dotenv import load_dotenv
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush
 from PySide6.QtWidgets import (
@@ -12,18 +15,7 @@ from PySide6.QtWidgets import (
     QTextEdit,
 )
 
-'''import os
-import openai
-
-from dotenv import load_dotenv
-
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-audio_file = open("audio.mp3", "rb")
-transcribed = openai.Audio.transcribe("whisper-1", audio_file)
-print("Resultado: ", transcribed.text)'''
-
+# Class for drawing the night sky with stars and a moon
 class NightSky(QWidget):
     def __init__(self):
         super().__init__()
@@ -88,7 +80,7 @@ class NightSky(QWidget):
 
 
 # ----------------------------
-# Ventana principal
+# Main window
 # ----------------------------
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -100,7 +92,7 @@ class MainWindow(QMainWindow):
         self.sky = NightSky()
         self.setCentralWidget(self.sky)
 
-        # Overlay (panel encima del cielo)
+        # Overlay (panel over the sky)
         self.overlay = QWidget(self.sky)
         self.overlay.setStyleSheet("""
             QWidget {
@@ -130,12 +122,18 @@ class MainWindow(QMainWindow):
         title = QLabel("Resultado")
         layout.addWidget(title)
 
+        load_dotenv()
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+
+        audio_file = open("audio.mp3", "rb")
+        transcribed = openai.Audio.transcribe("whisper-1", audio_file)
+
         self.text_box = QTextEdit()
         self.text_box.setReadOnly(True)
         self.text_box.setText(
             "Hola 🌙\n\n"
             "Diana está conectada ( ͡° ͜ʖ ͡°).\n"
-            "Esta caja mostrará el texto transcrito del audio."
+            "Resultado: " + transcribed.text
         )
         layout.addWidget(self.text_box)
 
