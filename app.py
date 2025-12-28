@@ -1,6 +1,7 @@
 import sys
 import numpy as np
-from PySide6.QtGui import QPainter, QColor, QPen
+from PySide6.QtCore import Qt, QPoint
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 
 '''import os
@@ -39,6 +40,9 @@ class NightSky(QWidget):
             size = int(rng.integers(1, 3))
             self.stars.append((x, y, c, size))
 
+        self.moon_center = QPoint(780, 120)
+        self.moon_radius = 52
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#061225"))
@@ -50,11 +54,28 @@ class NightSky(QWidget):
             painter.setPen(QPen(color))
             rx = int(x * sx)
             ry = int(y * sy)
-
             painter.drawPoint(rx, ry)
             if size > 1:
                 painter.drawPoint(rx + 1, ry)
                 painter.drawPoint(rx, ry + 1)
+
+        cx = int(self.moon_center.x() * sx)
+        cy = int(self.moon_center.y() * sy)
+        r = int(self.moon_radius * min(sx, sy))
+
+        painter.setPen(QPen(Qt.NoPen))
+
+        painter.setBrush(QBrush(QColor(255, 248, 220)))
+        painter.drawEllipse(cx - r, cy - r, 2 * r, 2 * r)
+
+        painter.setBrush(QBrush(QColor(255, 255, 255, 120)))
+        painter.drawEllipse(cx - int(r * 0.85), cy - int(r * 0.85),
+                            int(2 * r * 0.85), int(2 * r * 0.85))
+
+        painter.setBrush(QBrush(QColor(255, 255, 255, 70)))
+        painter.drawEllipse(cx - int(r * 0.65), cy - int(r * 0.65),
+                            int(2 * r * 0.65), int(2 * r * 0.65))
+
 
 def main():
     app = QApplication(sys.argv)
@@ -62,7 +83,6 @@ def main():
     win = QMainWindow()
     win.setWindowTitle("D_IA_NA")
     win.setMinimumSize(820, 520)
-
     win.setCentralWidget(NightSky())
 
     win.show()
